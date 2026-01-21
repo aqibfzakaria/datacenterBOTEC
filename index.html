@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Center Cost Comparison</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    function DataCenterCompare() {
+      // Facility size
+      const [sizeMW, setSizeMW] = useState(400);
+
+      // Construction costs (per MW)
+      const [constructionCostChina, setConstructionCostChina] = useState(6);
+      const [constructionCostUS, setConstructionCostUS] = useState(10);
+
+      // PUE (Power Usage Effectiveness) - shared between both countries
+      const [pue, setPue] = useState(1.11);
+
+      // Utilization rate
+      const [utilization, setUtilization] = useState(60);
+
+      // Calculate available energy after PUE and 12% overhead
+      const calculateAvailableEnergy = (pueValue) => {
+        return (sizeMW * 1000000 / pueValue) - (sizeMW * 1000000 * 0.12);
+      };
+
+      // Calculate number of racks (rounded down to whole numbers)
+      const availableEnergyChina = calculateAvailableEnergy(pue);
+      const availableEnergyUS = calculateAvailableEnergy(pue);
+      const racksChina = Math.floor(availableEnergyChina / 599821); // Huawei CloudMatrix 384
+      const racksUS = Math.floor(availableEnergyUS / 145000); // Nvidia GB200 NVL72
+
+      // Calculate costs
+      const constructionTotalChina = sizeMW * constructionCostChina * 1000000;
+      const constructionTotalUS = sizeMW * constructionCostUS * 1000000;
+
+      const hardwareCostChina = racksChina * 8000000;
+      const hardwareCostUS = racksUS * 2600000;
+
+      // Electricity cost over 3 years
+      const utilizationRate = utilization / 100;
+      const electricityCostChina = sizeMW * 1000 * utilizationRate * 0.06 * 8760 * 3; // 3 years, kWh
+      const electricityCostUS = sizeMW * 1000 * utilizationRate * 0.09 * 8760 * 3;
+
+      // Total costs
+      const totalCostChina = constructionTotalChina + hardwareCostChina + electricityCostChina;
+      const totalCostUS = constructionTotalUS + hardwareCostUS + electricityCostUS;
+
+      // Performance calculations
+      const performanceChina = racksChina * 300; // PFLOPS
+      const performanceUS = racksUS * 180; // PFLOPS
+
+      // Performance per dollar (GFLOPS/$)
+      const gflopsPerDollarChina = (performanceChina * 1000000) / totalCostChina; // Convert PFLOPS to GFLOPS
+      const gflopsPerDollarUS = (performanceUS * 1000000) / totalCostUS;
+
+      const difference = totalCostUS - totalCostChina;
+      const percentDiff = ((difference / totalCostUS) * 100).toFixed(1);
+
+      const formatCurrency = (value) => {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(value);
+      };
+
+      const formatNumber = (value) => {
+        return new Intl.NumberFormat('en-US', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        }).format(value);
+      };
+
+      const SliderControl = ({ label, value, onChange, min, max, step, unit, icon, suffix = '', benchmarkValue = null, benchmarkLabel = '' }) => (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {icon && <span className="text-gray-600">{icon}</span>}
+              <label className="text-sm font-medium text-gray-700">{label}</label>
+            </div>
+            <span className="text-sm font-bold text-gray-900">{unit}{formatNumber(value)}{suffix}</span>
+          </div>
+          <div className="relative">
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={step}
+              value={value}
+              onChange={(e) => onChange(parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+            {benchmarkValue !== null && (
+              <div
+                className="absolute top-0 w-1 h-2 bg-green-600 pointer-events-none"
+                style={{ left: `${((benchmarkValue - min) / (max - min)) * 100}%` }}
+                title={benchmarkLabel}
+              />
+            )}
+          </div>
+          {benchmarkValue !== null && (
+            <div className="text-xs text-green-700 mt-1 flex items-center gap-1">
+              <span className="inline-block w-3 h-3 bg-green-600 rounded-sm"></span>
+              {benchmarkLabel}
+            </div>
+          )}
+        </div>
+      );
+
+      const ResultCard = ({ title, construction, hardware, electricity, total, racks, performance, performancePerDollar, color, flag, rackType }) => (
+        <div className={`p-6 rounded-lg ${color}`}>
+          <h3 className="text-2xl font-bold mb-4">{flag} {title}</h3>
+
+          <div className="mb-4">
+            <h4 className="text-sm font-semibold text-gray-600 mb-2">COST BREAKDOWN (3 Years)</h4>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>Construction:</span>
+                <span className="font-semibold">{formatCurrency(construction)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Hardware ({formatNumber(racks)} {rackType}):</span>
+                <span className="font-semibold">{formatCurrency(hardware)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Electricity (3 years):</span>
+                <span className="font-semibold">{formatCurrency(electricity)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t-2 border-gray-300 mb-4">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-bold">Total Cost:</span>
+              <span className="text-2xl font-bold">{formatCurrency(total)}</span>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t-2 border-gray-300 bg-white bg-opacity-40 p-4 rounded">
+            <h4 className="text-sm font-semibold text-gray-600 mb-3">PERFORMANCE METRICS</h4>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-gray-600">Total Performance</div>
+                <div className="text-2xl font-bold text-indigo-700">{formatNumber(performance)} PFLOPS</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-600">Performance Efficiency</div>
+                <div className="text-2xl font-bold text-green-700">{formatNumber(performancePerDollar)} GFLOPS/$</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-8">
+              <h1 className="text-5xl font-bold text-white mb-3">Data Center Performance & Cost Analysis</h1>
+              <p className="text-gray-300 text-lg">3-Year Total Cost of Ownership: U.S. vs China</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Controls */}
+              <div className="lg:col-span-1 bg-white rounded-lg shadow-2xl p-6">
+                <h2 className="text-2xl font-bold mb-6 text-gray-800">Configuration</h2>
+
+                <div className="mb-8 bg-indigo-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-indigo-900">Facility Size</h3>
+                  <SliderControl
+                    label="Power Capacity"
+                    value={sizeMW}
+                    onChange={setSizeMW}
+                    min={300}
+                    max={1000}
+                    step={10}
+                    unit=""
+                    suffix=" MW"
+                    icon="⚡"
+                    benchmarkValue={400}
+                    benchmarkLabel="Benchmark: 400 MW (largest existing)"
+                  />
+                  <div className="text-xs text-gray-600 mt-2">
+                    = {(sizeMW / 1000).toFixed(2)} GW
+                  </div>
+                </div>
+
+                <div className="mb-8 bg-purple-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-purple-900">Shared Parameters</h3>
+                  <SliderControl
+                    label="PUE (Power Usage Effectiveness)"
+                    value={pue}
+                    onChange={setPue}
+                    min={1.04}
+                    max={1.18}
+                    step={0.01}
+                    unit=""
+                    suffix=""
+                    icon="⚡"
+                    benchmarkValue={1.11}
+                    benchmarkLabel="Benchmark: 1.11 (typical)"
+                  />
+                  <div className="text-xs text-gray-600 mt-1">
+                    {((1/pue) * 100).toFixed(1)}% electricity to hardware
+                  </div>
+                </div>
+
+                <div className="mb-8 bg-blue-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-blue-900">🇺🇸 U.S. Parameters</h3>
+                  <SliderControl
+                    label="Construction Cost"
+                    value={constructionCostUS}
+                    onChange={setConstructionCostUS}
+                    min={8}
+                    max={12}
+                    step={0.5}
+                    unit="$"
+                    suffix="M/MW"
+                    icon="🏗️"
+                    benchmarkValue={10}
+                    benchmarkLabel="Benchmark: $10M/MW"
+                  />
+                </div>
+
+                <div className="mb-8 bg-red-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-red-900">🇨🇳 China Parameters</h3>
+                  <SliderControl
+                    label="Construction Cost"
+                    value={constructionCostChina}
+                    onChange={setConstructionCostChina}
+                    min={5.5}
+                    max={6.5}
+                    step={0.1}
+                    unit="$"
+                    suffix="M/MW"
+                    icon="🏗️"
+                    benchmarkValue={6}
+                    benchmarkLabel="Benchmark: $6M/MW"
+                  />
+                </div>
+
+                <div className="bg-amber-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-amber-900">Workload Profile</h3>
+                  <SliderControl
+                    label="Utilization Rate"
+                    value={utilization}
+                    onChange={setUtilization}
+                    min={40}
+                    max={80}
+                    step={5}
+                    unit=""
+                    suffix="%"
+                    icon="💻"
+                    benchmarkValue={60}
+                    benchmarkLabel="Benchmark: 60% (mixed)"
+                  />
+                  <div className="text-xs text-gray-600 mt-1">
+                    {utilization <= 50 ? '(Inference workload)' : utilization >= 70 ? '(Training workload)' : '(Mixed workload)'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Results */}
+              <div className="lg:col-span-2 space-y-6">
+                <ResultCard
+                  title="United States"
+                  flag="🇺🇸"
+                  construction={constructionTotalUS}
+                  hardware={hardwareCostUS}
+                  electricity={electricityCostUS}
+                  total={totalCostUS}
+                  racks={racksUS}
+                  rackType="Nvidia GB200 NVL72 racks"
+                  performance={performanceUS}
+                  performancePerDollar={gflopsPerDollarUS}
+                  color="bg-gradient-to-br from-blue-100 to-blue-200 border-4 border-blue-400 shadow-xl"
+                />
+
+                <ResultCard
+                  title="China"
+                  flag="🇨🇳"
+                  construction={constructionTotalChina}
+                  hardware={hardwareCostChina}
+                  electricity={electricityCostChina}
+                  total={totalCostChina}
+                  racks={racksChina}
+                  rackType="Huawei CloudMatrix 384 racks"
+                  performance={performanceChina}
+                  performancePerDollar={gflopsPerDollarChina}
+                  color="bg-gradient-to-br from-red-100 to-red-200 border-4 border-red-400 shadow-xl"
+                />
+
+                <div className="bg-gradient-to-r from-yellow-200 via-orange-200 to-pink-200 p-6 rounded-lg shadow-2xl border-4 border-yellow-400">
+                  <h3 className="text-2xl font-bold mb-6 text-center">Comparative Analysis</h3>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="bg-white bg-opacity-70 p-4 rounded-lg">
+                      <h4 className="text-sm font-semibold text-gray-600 mb-2">Cost Difference</h4>
+                      <p className="text-xs text-gray-700 mb-1">
+                        {difference > 0 ? 'U.S. costs MORE:' : 'China costs MORE:'}
+                      </p>
+                      <p className="text-3xl font-bold text-purple-800">
+                        {formatCurrency(Math.abs(difference))}
+                      </p>
+                      <p className="text-sm text-gray-700 mt-1">
+                        ({Math.abs(percentDiff)}% difference)
+                      </p>
+                    </div>
+
+                    <div className="bg-white bg-opacity-70 p-4 rounded-lg">
+                      <h4 className="text-sm font-semibold text-gray-600 mb-2">Performance Winner</h4>
+                      <p className="text-xs text-gray-700 mb-1">
+                        {performanceChina > performanceUS ? '🇨🇳 China leads:' : '🇺🇸 U.S. leads:'}
+                      </p>
+                      <p className="text-3xl font-bold text-indigo-800">
+                        {formatNumber(Math.abs(performanceChina - performanceUS))}
+                      </p>
+                      <p className="text-sm text-gray-700 mt-1">PFLOPS advantage</p>
+                    </div>
+
+                    <div className="bg-white bg-opacity-70 p-4 rounded-lg col-span-2">
+                      <h4 className="text-sm font-semibold text-gray-600 mb-2">Efficiency Winner</h4>
+                      <p className="text-xs text-gray-700 mb-1">
+                        {gflopsPerDollarChina > gflopsPerDollarUS ? '🇨🇳 China is more efficient:' : '🇺🇸 U.S. is more efficient:'}
+                      </p>
+                      <div className="flex justify-center items-baseline gap-2">
+                        <p className="text-4xl font-bold text-green-800">
+                          {formatNumber(Math.max(gflopsPerDollarChina, gflopsPerDollarUS))}
+                        </p>
+                        <p className="text-xl text-gray-700">GFLOPS/$</p>
+                      </div>
+                      <p className="text-sm text-gray-700 mt-2 text-center">
+                        vs {formatNumber(Math.min(gflopsPerDollarChina, gflopsPerDollarUS))} GFLOPS/$ for the other
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<DataCenterCompare />, document.getElementById('root'));
+  </script>
+</body>
+</html>
