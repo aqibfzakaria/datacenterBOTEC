@@ -18,14 +18,14 @@
     function DataCenterCompare() {
       // Facility size
       const [sizeMW, setSizeMW] = useState(400);
-
+      
       // Construction costs (per MW)
       const [constructionCostChina, setConstructionCostChina] = useState(6);
       const [constructionCostUS, setConstructionCostUS] = useState(10);
-
+      
       // PUE (Power Usage Effectiveness) - shared between both countries
       const [pue, setPue] = useState(1.11);
-
+      
       // Utilization rate
       const [utilization, setUtilization] = useState(60);
 
@@ -79,38 +79,37 @@
       };
 
       // Calculate number of racks (rounded down to whole numbers)
-      const availableEnergy = calculateAvailableEnergy();
-      const racksUS = Math.floor(availableEnergy / hardware.gb200.powerW);
-      const racksChina = Math.floor(availableEnergy / hardware.cm384.powerW);
-      const podsH200 = Math.floor(availableEnergy / hardware.h200pod.powerW);
-
+      const availableEnergyChina = calculateAvailableEnergy(pue);
+      const availableEnergyUS = calculateAvailableEnergy(pue);
+      const racksChina = Math.floor(availableEnergyChina / 599821); // Huawei CloudMatrix 384
+      const racksUS = Math.floor(availableEnergyUS / 145000); // Nvidia GB200 NVL72
+      
       // Calculate costs
       const constructionTotalChina = sizeMW * constructionCostChina * 1000000;
       const constructionTotalUS = sizeMW * constructionCostUS * 1000000;
-
-      const hardwareCostUS = racksUS * hardware.gb200.costPerUnit;
-      const hardwareCostChina = racksChina * hardware.cm384.costPerUnit;
-      const hardwareCostH200 = podsH200 * hardware.h200pod.costPerUnit;
-
+      
+      const hardwareCostChina = racksChina * 8000000;
+      const hardwareCostUS = racksUS * 2600000;
+      
       // Electricity cost over 3 years
       const utilizationRate = utilization / 100;
-      const electricityCostChina = sizeMW * 1000 * utilizationRate * 0.05565 * 8760 * 3;
-      const electricityCostUS = sizeMW * 1000 * utilizationRate * 0.0906 * 8760 * 3;
-
+      const electricityCostChina = sizeMW * 1000 * utilizationRate * 0.06 * 8760 * 3; // 3 years, kWh
+      const electricityCostUS = sizeMW * 1000 * utilizationRate * 0.09 * 8760 * 3;
+      
       // Total costs
-      const totalCostUS = constructionTotalUS + hardwareCostUS + electricityCostUS;
       const totalCostChina = constructionTotalChina + hardwareCostChina + electricityCostChina;
-      const totalCostH200 = constructionTotalChina + hardwareCostH200 + electricityCostChina;
-
-      // Sustainable performance calculations (SPFLOPS)
-      const spflopsUS = racksUS * calcSPFLOPS(hardware.gb200);
-      const spflopsChina = racksChina * calcSPFLOPS(hardware.cm384);
-      const spflopsH200 = podsH200 * calcSPFLOPS(hardware.h200pod);
-
-      // Performance per dollar (SGFLOPS/$)
-      const sgflopsPerDollarUS = (spflopsUS * 1000000) / totalCostUS;
-      const sgflopsPerDollarChina = (spflopsChina * 1000000) / totalCostChina;
-      const sgflopsPerDollarH200 = (spflopsH200 * 1000000) / totalCostH200;
+      const totalCostUS = constructionTotalUS + hardwareCostUS + electricityCostUS;
+      
+      // Performance calculations
+      const performanceChina = racksChina * 300; // PFLOPS
+      const performanceUS = racksUS * 180; // PFLOPS
+      
+      // Performance per dollar (GFLOPS/$)
+      const gflopsPerDollarChina = (performanceChina * 1000000) / totalCostChina; // Convert PFLOPS to GFLOPS
+      const gflopsPerDollarUS = (performanceUS * 1000000) / totalCostUS;
+      
+      const difference = totalCostUS - totalCostChina;
+      const percentDiff = ((difference / totalCostUS) * 100).toFixed(1);
 
       const formatCurrency = (value) => {
         return new Intl.NumberFormat('en-US', {
@@ -120,7 +119,7 @@
           maximumFractionDigits: 0,
         }).format(value);
       };
-
+      
       const formatNumber = (value) => {
         return new Intl.NumberFormat('en-US', {
           minimumFractionDigits: 0,
@@ -148,7 +147,7 @@
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             />
             {benchmarkValue !== null && (
-              <div
+              <div 
                 className="absolute top-0 w-1 h-2 bg-green-600 pointer-events-none"
                 style={{ left: `${((benchmarkValue - min) / (max - min)) * 100}%` }}
                 title={benchmarkLabel}
@@ -167,7 +166,7 @@
       const ResultCard = ({ title, construction, hardware, electricity, total, units, unitLabel, spflops, sgflopsPerDollar, color, flag, spflopsPerUnit, crossoverAI, computeBound }) => (
         <div className={`p-6 rounded-lg ${color}`}>
           <h3 className="text-2xl font-bold mb-4">{flag} {title}</h3>
-
+          
           <div className="mb-4">
             <h4 className="text-sm font-semibold text-gray-600 mb-2">COST BREAKDOWN (3 Years)</h4>
             <div className="space-y-2 text-sm">
@@ -176,7 +175,7 @@
                 <span className="font-semibold">{formatCurrency(construction)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Hardware ({formatNumber(units)} {unitLabel}):</span>
+                <span>Hardware ({formatNumber(racks)} {rackType}):</span>
                 <span className="font-semibold">{formatCurrency(hardware)}</span>
               </div>
               <div className="flex justify-between">
@@ -185,14 +184,14 @@
               </div>
             </div>
           </div>
-
+          
           <div className="pt-4 border-t-2 border-gray-300 mb-4">
             <div className="flex justify-between items-center">
               <span className="text-lg font-bold">Total Cost:</span>
               <span className="text-2xl font-bold">{formatCurrency(total)}</span>
             </div>
           </div>
-
+          
           <div className="pt-4 border-t-2 border-gray-300 bg-white bg-opacity-40 p-4 rounded">
             <h4 className="text-sm font-semibold text-gray-600 mb-3">SUSTAINABLE PERFORMANCE (AI={arithmeticIntensity})</h4>
 
@@ -207,27 +206,17 @@
 
             <div className="space-y-3">
               <div>
-                <div className="text-xs text-gray-600">Total Sustainable PFLOPS</div>
-                <div className="text-2xl font-bold text-indigo-700">{formatNumber(spflops)} SPFLOPS</div>
-                <div className="text-xs text-gray-500">({formatNumber(spflopsPerUnit)} SPFLOPS per unit)</div>
+                <div className="text-xs text-gray-600">Total Performance</div>
+                <div className="text-2xl font-bold text-indigo-700">{formatNumber(performance)} PFLOPS</div>
               </div>
               <div>
-                <div className="text-xs text-gray-600">Sustainable Efficiency</div>
-                <div className="text-2xl font-bold text-green-700">{formatNumber(sgflopsPerDollar)} SGFLOPS/$</div>
+                <div className="text-xs text-gray-600">Performance Efficiency</div>
+                <div className="text-2xl font-bold text-green-700">{formatNumber(performancePerDollar)} GFLOPS/$</div>
               </div>
             </div>
           </div>
         </div>
       );
-
-      // Find the best performer
-      const maxSGFLOPS = Math.max(sgflopsPerDollarUS, sgflopsPerDollarChina, sgflopsPerDollarH200);
-      const efficiencyWinner = sgflopsPerDollarUS === maxSGFLOPS ? 'U.S.' :
-                               sgflopsPerDollarChina === maxSGFLOPS ? 'China (CM384)' : 'China (H200)';
-
-      const maxSPFLOPS = Math.max(spflopsUS, spflopsChina, spflopsH200);
-      const performanceWinner = spflopsUS === maxSPFLOPS ? 'U.S.' :
-                                spflopsChina === maxSPFLOPS ? 'China (CM384)' : 'China (H200)';
 
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
@@ -238,55 +227,45 @@
               <p className="text-gray-400 text-sm mt-2">Using Sustainable PFLOPS (memory-limited at AI={arithmeticIntensity})</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Controls */}
               <div className="lg:col-span-1 bg-white rounded-lg shadow-2xl p-6">
                 <h2 className="text-2xl font-bold mb-6 text-gray-800">Configuration</h2>
-
-                <div className="mb-6 bg-indigo-50 p-4 rounded-lg">
+                
+                <div className="mb-8 bg-indigo-50 p-4 rounded-lg">
                   <h3 className="text-lg font-semibold mb-4 text-indigo-900">Facility Size</h3>
                   <SliderControl
                     label="Power Capacity"
                     value={sizeMW}
                     onChange={setSizeMW}
-                    min={100}
+                    min={300}
                     max={1000}
                     step={10}
                     unit=""
                     suffix=" MW"
                     icon="⚡"
                     benchmarkValue={400}
-                    benchmarkLabel="Benchmark: 400 MW"
+                    benchmarkLabel="Benchmark: 400 MW (largest existing)"
                   />
+                  <div className="text-xs text-gray-600 mt-2">
+                    = {(sizeMW / 1000).toFixed(2)} GW
+                  </div>
                 </div>
 
-                <div className="mb-6 bg-purple-50 p-4 rounded-lg">
+                <div className="mb-8 bg-purple-50 p-4 rounded-lg">
                   <h3 className="text-lg font-semibold mb-4 text-purple-900">Shared Parameters</h3>
                   <SliderControl
-                    label="PUE"
+                    label="PUE (Power Usage Effectiveness)"
                     value={pue}
                     onChange={setPue}
                     min={1.04}
-                    max={1.20}
+                    max={1.18}
                     step={0.01}
                     unit=""
                     suffix=""
                     icon="⚡"
                     benchmarkValue={1.11}
-                    benchmarkLabel="Benchmark: 1.11"
-                  />
-                  <SliderControl
-                    label="Utilization Rate"
-                    value={utilization}
-                    onChange={setUtilization}
-                    min={40}
-                    max={80}
-                    step={5}
-                    unit=""
-                    suffix="%"
-                    icon="💻"
-                    benchmarkValue={60}
-                    benchmarkLabel="Benchmark: 60%"
+                    benchmarkLabel="Benchmark: 1.11 (typical)"
                   />
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-2">
@@ -340,10 +319,10 @@
                   </div>
                 </div>
 
-                <div className="mb-6 bg-blue-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-semibold mb-2 text-blue-900">🇺🇸 U.S. Construction</h3>
+                <div className="mb-8 bg-blue-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-blue-900">🇺🇸 U.S. Parameters</h3>
                   <SliderControl
-                    label=""
+                    label="Construction Cost"
                     value={constructionCostUS}
                     onChange={setConstructionCostUS}
                     min={8}
@@ -351,15 +330,16 @@
                     step={0.5}
                     unit="$"
                     suffix="M/MW"
+                    icon="🏗️"
                     benchmarkValue={10}
-                    benchmarkLabel="$10M/MW"
+                    benchmarkLabel="Benchmark: $10M/MW"
                   />
                 </div>
 
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-semibold mb-2 text-red-900">🇨🇳 China Construction</h3>
+                <div className="mb-8 bg-red-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4 text-red-900">🇨🇳 China Parameters</h3>
                   <SliderControl
-                    label=""
+                    label="Construction Cost"
                     value={constructionCostChina}
                     onChange={setConstructionCostChina}
                     min={5.5}
@@ -367,8 +347,9 @@
                     step={0.1}
                     unit="$"
                     suffix="M/MW"
+                    icon="🏗️"
                     benchmarkValue={6}
-                    benchmarkLabel="$6M/MW"
+                    benchmarkLabel="Benchmark: $6M/MW"
                   />
                 </div>
               </div>
@@ -426,51 +407,84 @@
                     computeBound={isComputeBound(hardware.h200pod)}
                     color="bg-gradient-to-br from-green-100 to-green-200 border-4 border-green-400 shadow-xl"
                   />
+                  <div className="text-xs text-gray-600 mt-1">
+                    {utilization <= 50 ? '(Inference workload)' : utilization >= 70 ? '(Training workload)' : '(Mixed workload)'}
+                  </div>
                 </div>
+              </div>
+
+              {/* Results */}
+              <div className="lg:col-span-2 space-y-6">
+                <ResultCard
+                  title="United States"
+                  flag="🇺🇸"
+                  construction={constructionTotalUS}
+                  hardware={hardwareCostUS}
+                  electricity={electricityCostUS}
+                  total={totalCostUS}
+                  racks={racksUS}
+                  rackType="Nvidia GB200 NVL72 racks"
+                  performance={performanceUS}
+                  performancePerDollar={gflopsPerDollarUS}
+                  color="bg-gradient-to-br from-blue-100 to-blue-200 border-4 border-blue-400 shadow-xl"
+                />
+
+                <ResultCard
+                  title="China"
+                  flag="🇨🇳"
+                  construction={constructionTotalChina}
+                  hardware={hardwareCostChina}
+                  electricity={electricityCostChina}
+                  total={totalCostChina}
+                  racks={racksChina}
+                  rackType="Huawei CloudMatrix 384 racks"
+                  performance={performanceChina}
+                  performancePerDollar={gflopsPerDollarChina}
+                  color="bg-gradient-to-br from-red-100 to-red-200 border-4 border-red-400 shadow-xl"
+                />
 
                 <div className="bg-gradient-to-r from-yellow-200 via-orange-200 to-pink-200 p-6 rounded-lg shadow-2xl border-4 border-yellow-400">
                   <h3 className="text-2xl font-bold mb-6 text-center">Comparative Analysis</h3>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-white bg-opacity-70 p-4 rounded-lg text-center">
+                  
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="bg-white bg-opacity-70 p-4 rounded-lg">
+                      <h4 className="text-sm font-semibold text-gray-600 mb-2">Cost Difference</h4>
+                      <p className="text-xs text-gray-700 mb-1">
+                        {difference > 0 ? 'U.S. costs MORE:' : 'China costs MORE:'}
+                      </p>
+                      <p className="text-3xl font-bold text-purple-800">
+                        {formatCurrency(Math.abs(difference))}
+                      </p>
+                      <p className="text-sm text-gray-700 mt-1">
+                        ({Math.abs(percentDiff)}% difference)
+                      </p>
+                    </div>
+                    
+                    <div className="bg-white bg-opacity-70 p-4 rounded-lg">
                       <h4 className="text-sm font-semibold text-gray-600 mb-2">Performance Winner</h4>
-                      <p className="text-2xl font-bold text-indigo-800">{performanceWinner}</p>
-                      <p className="text-lg font-semibold text-indigo-600">{formatNumber(maxSPFLOPS)} SPFLOPS</p>
+                      <p className="text-xs text-gray-700 mb-1">
+                        {performanceChina > performanceUS ? '🇨🇳 China leads:' : '🇺🇸 U.S. leads:'}
+                      </p>
+                      <p className="text-3xl font-bold text-indigo-800">
+                        {formatNumber(Math.abs(performanceChina - performanceUS))}
+                      </p>
+                      <p className="text-sm text-gray-700 mt-1">PFLOPS advantage</p>
                     </div>
-
-                    <div className="bg-white bg-opacity-70 p-4 rounded-lg text-center">
+                    
+                    <div className="bg-white bg-opacity-70 p-4 rounded-lg col-span-2">
                       <h4 className="text-sm font-semibold text-gray-600 mb-2">Efficiency Winner</h4>
-                      <p className="text-2xl font-bold text-green-800">{efficiencyWinner}</p>
-                      <p className="text-lg font-semibold text-green-600">{formatNumber(maxSGFLOPS)} SGFLOPS/$</p>
-                    </div>
-
-                    <div className="bg-white bg-opacity-70 p-4 rounded-lg text-center">
-                      <h4 className="text-sm font-semibold text-gray-600 mb-2">Lowest Cost</h4>
-                      <p className="text-2xl font-bold text-purple-800">
-                        {totalCostChina <= totalCostUS && totalCostChina <= totalCostH200 ? 'China (CM384)' :
-                         totalCostH200 <= totalCostUS ? 'China (H200)' : 'U.S.'}
+                      <p className="text-xs text-gray-700 mb-1">
+                        {gflopsPerDollarChina > gflopsPerDollarUS ? '🇨🇳 China is more efficient:' : '🇺🇸 U.S. is more efficient:'}
                       </p>
-                      <p className="text-lg font-semibold text-purple-600">
-                        {formatCurrency(Math.min(totalCostUS, totalCostChina, totalCostH200))}
+                      <div className="flex justify-center items-baseline gap-2">
+                        <p className="text-4xl font-bold text-green-800">
+                          {formatNumber(Math.max(gflopsPerDollarChina, gflopsPerDollarUS))}
+                        </p>
+                        <p className="text-xl text-gray-700">GFLOPS/$</p>
+                      </div>
+                      <p className="text-sm text-gray-700 mt-2 text-center">
+                        vs {formatNumber(Math.min(gflopsPerDollarChina, gflopsPerDollarUS))} GFLOPS/$ for the other
                       </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 bg-white bg-opacity-50 p-4 rounded-lg">
-                    <h4 className="text-sm font-semibold text-gray-600 mb-2 text-center">Efficiency Comparison (vs U.S.)</h4>
-                    <div className="grid grid-cols-2 gap-4 text-center">
-                      <div>
-                        <span className="text-sm text-gray-600">China (CM384):</span>
-                        <span className={`ml-2 font-bold ${sgflopsPerDollarChina >= sgflopsPerDollarUS ? 'text-green-600' : 'text-red-600'}`}>
-                          {sgflopsPerDollarChina >= sgflopsPerDollarUS ? '+' : ''}{(((sgflopsPerDollarChina / sgflopsPerDollarUS) - 1) * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-sm text-gray-600">China (H200):</span>
-                        <span className={`ml-2 font-bold ${sgflopsPerDollarH200 >= sgflopsPerDollarUS ? 'text-green-600' : 'text-red-600'}`}>
-                          {sgflopsPerDollarH200 >= sgflopsPerDollarUS ? '+' : ''}{(((sgflopsPerDollarH200 / sgflopsPerDollarUS) - 1) * 100).toFixed(1)}%
-                        </span>
-                      </div>
                     </div>
                   </div>
                 </div>
