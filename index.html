@@ -37,6 +37,33 @@
       const [quantizationCM384, setQuantizationCM384] = useState('FP16');
       const [quantizationH200, setQuantizationH200] = useState('FP16');
 
+      // Hardware price sliders (actual prices, not percentages)
+      // GB200 NVL72: ~$2.6M per rack, ±10% range = $2.34M - $2.86M
+      const [gb200PricePerUnit, setGb200PricePerUnit] = useState(2600000);
+      const gb200PriceLow = 2340000;
+      const gb200PriceHigh = 2860000;
+
+      // CM384: ~$8M per rack, ±10% range = $7.2M - $8.8M
+      const [cm384PricePerUnit, setCm384PricePerUnit] = useState(8000000);
+      const cm384PriceLow = 7200000;
+      const cm384PriceHigh = 8800000;
+
+      // H200: DGX price per unit (range $322,500 - $500,000)
+      const [h200PricePerUnit, setH200PricePerUnit] = useState(450000);
+      const h200PriceLow = 322500;
+      const h200PriceHigh = 500000;
+
+      // Electricity rate sliders ($/kWh)
+      // US: EIA range $0.0588 (Louisiana) to $0.1903 (Massachusetts), mid ~$0.09
+      const [electricityRateUS, setElectricityRateUS] = useState(0.0906);
+      const electricityRateUSLow = 0.0588;
+      const electricityRateUSHigh = 0.1903;
+
+      // China: CEIC range ~$0.057 to $0.11, mid ~$0.056
+      const [electricityRateChina, setElectricityRateChina] = useState(0.05565);
+      const electricityRateChinaLow = 0.045;
+      const electricityRateChinaHigh = 0.11;
+
       // Quantization multipliers for PFLOPS and effective bandwidth
       // Lower precision = more ops and more values per byte transferred
       const quantizationSpecs = {
@@ -66,7 +93,7 @@
         h200pod: {
           name: "DGX H200 Pod (9 nodes)",
           powerW: 95220, // 9 x (10,200 + 380) per node
-          costPerUnit: 2102041, // ~$6.9B / 3,280 pods (includes networking)
+          // Cost calculated dynamically based on h200PricePerUnit slider
           memBandwidthTBs: 345.6, // 9 x 8 x 4.8 TB/s
           peakPFLOPS: 144, // 9 x 8 x 2 PFLOPS
           supportedQuant: ['FP16', 'INT8'],
@@ -122,19 +149,66 @@
       const constructionTotalChina = sizeMW * constructionCostChina * 1000000;
       const constructionTotalUS = sizeMW * constructionCostUS * 1000000;
 
-      const hardwareCostUS = racksUS * baseHardware.gb200.costPerUnit;
-      const hardwareCostChina = racksChina * baseHardware.cm384.costPerUnit;
-      const hardwareCostH200 = podsH200 * baseHardware.h200pod.costPerUnit;
+      // Hardware costs using slider prices
+      const hardwareCostUS = racksUS * gb200PricePerUnit;
+      const hardwareCostChina = racksChina * cm384PricePerUnit;
+      // H200 cost: (price per DGX unit * 9 nodes per pod) + networking
+      const dgxUnitsH200 = podsH200 * 9; // 9 DGX nodes per pod
+      const networkingCostH200 = 547900000; // Static $547.9M for networking
+      const hardwareCostH200 = (dgxUnitsH200 * h200PricePerUnit) + networkingCostH200;
 
-      // Electricity cost over 3 years
+      // Electricity cost over 3 years (using slider rates)
       const utilizationRate = utilization / 100;
-      const electricityCostChina = sizeMW * 1000 * utilizationRate * 0.05565 * 8760 * 3;
-      const electricityCostUS = sizeMW * 1000 * utilizationRate * 0.0906 * 8760 * 3;
+      const electricityCostChina = sizeMW * 1000 * utilizationRate * electricityRateChina * 8760 * 3;
+      const electricityCostUS = sizeMW * 1000 * utilizationRate * electricityRateUS * 8760 * 3;
 
-      // Total costs
-      const totalCostUS = constructionTotalUS + hardwareCostUS + electricityCostUS;
-      const totalCostChina = constructionTotalChina + hardwareCostChina + electricityCostChina;
-      const totalCostH200 = constructionTotalChina + hardwareCostH200 + electricityCostChina;
+      // Personnel costs over 3 years (500 employees)
+      const personnelCostUS = 500 * 122672 * 3;  // $122,672 avg salary
+      const personnelCostChina = 500 * 21925 * 3;  // $21,925 avg salary
+
+      // Total costs (mid-point estimates)
+      const totalCostUS = constructionTotalUS + hardwareCostUS + electricityCostUS + personnelCostUS;
+      const totalCostChina = constructionTotalChina + hardwareCostChina + electricityCostChina + personnelCostChina;
+      const totalCostH200 = constructionTotalChina + hardwareCostH200 + electricityCostChina + personnelCostChina;
+
+      // Calculate error ranges (combined via quadrature)
+      // US GB200 errors (using price range)
+      const gb200HwLow = racksUS * gb200PriceLow;
+      const gb200HwHigh = racksUS * gb200PriceHigh;
+      const errorGB200HwLower = hardwareCostUS - gb200HwLow;
+      const errorGB200HwUpper = gb200HwHigh - hardwareCostUS;
+      // Electricity error based on rate range
+      const elecCostUSLow = sizeMW * 1000 * utilizationRate * electricityRateUSLow * 8760 * 3;
+      const elecCostUSHigh = sizeMW * 1000 * utilizationRate * electricityRateUSHigh * 8760 * 3;
+      const errorElecUSLower = electricityCostUS - elecCostUSLow;
+      const errorElecUSUpper = elecCostUSHigh - electricityCostUS;
+      const errorConstructionUS = (constructionCostUS === 10) ? 0.8 * sizeMW * 1000000 :
+        Math.abs(constructionCostUS - 10) * sizeMW * 1000000;
+      const totalErrorUSLower = Math.sqrt(errorConstructionUS**2 + errorGB200HwLower**2 + errorElecUSLower**2);
+      const totalErrorUSUpper = Math.sqrt(errorConstructionUS**2 + errorGB200HwUpper**2 + errorElecUSUpper**2);
+
+      // China CM384 errors (using price range)
+      const cm384HwLow = racksChina * cm384PriceLow;
+      const cm384HwHigh = racksChina * cm384PriceHigh;
+      const errorCM384HwLower = hardwareCostChina - cm384HwLow;
+      const errorCM384HwUpper = cm384HwHigh - hardwareCostChina;
+      // Electricity error based on rate range
+      const elecCostChinaLow = sizeMW * 1000 * utilizationRate * electricityRateChinaLow * 8760 * 3;
+      const elecCostChinaHigh = sizeMW * 1000 * utilizationRate * electricityRateChinaHigh * 8760 * 3;
+      const errorElecChinaLower = electricityCostChina - elecCostChinaLow;
+      const errorElecChinaUpper = elecCostChinaHigh - electricityCostChina;
+      const errorConstructionChina = (constructionCostChina === 6) ? 0.2 * sizeMW * 1000000 :
+        Math.abs(constructionCostChina - 6) * sizeMW * 1000000;
+      const totalErrorChinaLower = Math.sqrt(errorConstructionChina**2 + errorCM384HwLower**2 + errorElecChinaLower**2);
+      const totalErrorChinaUpper = Math.sqrt(errorConstructionChina**2 + errorCM384HwUpper**2 + errorElecChinaUpper**2);
+
+      // China H200 errors (using price range)
+      const h200HwLow = (dgxUnitsH200 * h200PriceLow) + networkingCostH200;
+      const h200HwHigh = (dgxUnitsH200 * h200PriceHigh) + networkingCostH200;
+      const errorH200HwLower = hardwareCostH200 - h200HwLow;
+      const errorH200HwUpper = h200HwHigh - hardwareCostH200;
+      const totalErrorH200Lower = Math.sqrt(errorConstructionChina**2 + errorH200HwLower**2 + errorElecChinaLower**2);
+      const totalErrorH200Upper = Math.sqrt(errorConstructionChina**2 + errorH200HwUpper**2 + errorElecChinaUpper**2);
 
       // Sustainable performance calculations (SPFLOPS)
       const spflopsUS = racksUS * calcSPFLOPS(hardware.gb200);
@@ -145,6 +219,14 @@
       const sgflopsPerDollarUS = (spflopsUS * 1000000) / totalCostUS;
       const sgflopsPerDollarChina = (spflopsChina * 1000000) / totalCostChina;
       const sgflopsPerDollarH200 = (spflopsH200 * 1000000) / totalCostH200;
+
+      // Efficiency ranges (low cost = high efficiency, high cost = low efficiency)
+      const sgflopsPerDollarUSLow = (spflopsUS * 1000000) / (totalCostUS + totalErrorUSUpper);
+      const sgflopsPerDollarUSHigh = (spflopsUS * 1000000) / (totalCostUS - totalErrorUSLower);
+      const sgflopsPerDollarChinaLow = (spflopsChina * 1000000) / (totalCostChina + totalErrorChinaUpper);
+      const sgflopsPerDollarChinaHigh = (spflopsChina * 1000000) / (totalCostChina - totalErrorChinaLower);
+      const sgflopsPerDollarH200Low = (spflopsH200 * 1000000) / (totalCostH200 + totalErrorH200Upper);
+      const sgflopsPerDollarH200High = (spflopsH200 * 1000000) / (totalCostH200 - totalErrorH200Lower);
 
       const formatCurrency = (value) => {
         return new Intl.NumberFormat('en-US', {
@@ -219,7 +301,7 @@
         </div>
       );
 
-      const ResultCard = ({ title, construction, hardware, electricity, total, units, unitLabel, spflops, sgflopsPerDollar, color, flag, spflopsPerUnit, crossoverAI, computeBound, quantization, peakPFLOPS }) => (
+      const ResultCard = ({ title, construction, hardware, electricity, personnel, total, errorLower, errorUpper, units, unitLabel, spflops, sgflopsPerDollar, sgflopsLow, sgflopsHigh, color, flag, spflopsPerUnit, crossoverAI, computeBound, quantization, peakPFLOPS }) => (
         <div className={`p-6 rounded-lg ${color}`}>
           <h3 className="text-2xl font-bold mb-2">{flag} {title}</h3>
           <div className="text-sm font-semibold text-gray-600 mb-4">Quantization: {quantization}</div>
@@ -236,8 +318,12 @@
                 <span className="font-semibold">{formatCurrency(hardware)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Electricity (3 years):</span>
+                <span>Electricity:</span>
                 <span className="font-semibold">{formatCurrency(electricity)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Personnel (500 staff):</span>
+                <span className="font-semibold">{formatCurrency(personnel)}</span>
               </div>
             </div>
           </div>
@@ -246,6 +332,12 @@
             <div className="flex justify-between items-center">
               <span className="text-lg font-bold">Total Cost:</span>
               <span className="text-2xl font-bold">{formatCurrency(total)}</span>
+            </div>
+            <div className="text-xs text-gray-600 mt-1 text-center">
+              Range: {formatCurrency(total - errorLower)} – {formatCurrency(total + errorUpper)}
+            </div>
+            <div className="text-xs text-gray-500 text-center">
+              (±{formatCurrency((errorLower + errorUpper) / 2)} uncertainty)
             </div>
           </div>
 
@@ -274,6 +366,7 @@
               <div>
                 <div className="text-xs text-gray-600">Sustainable Efficiency</div>
                 <div className="text-2xl font-bold text-green-700">{formatNumber(sgflopsPerDollar)} SGFLOPS/$</div>
+                <div className="text-xs text-gray-500">Range: {formatNumber(sgflopsLow)} – {formatNumber(sgflopsHigh)}</div>
               </div>
             </div>
           </div>
@@ -459,6 +552,133 @@
                     benchmarkLabel="$6M/MW"
                   />
                 </div>
+
+                <div className="mt-6 bg-orange-50 p-4 rounded-lg border-2 border-orange-300">
+                  <h3 className="text-lg font-semibold mb-4 text-orange-900">📊 Uncertainty / Margin of Error</h3>
+
+                  <div className="mb-4">
+                    <h4 className="text-xs font-semibold text-gray-600 mb-2">Hardware Price per Unit</h4>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600">🔵</span>
+                          <label className="text-sm font-medium text-gray-700">GB200 NVL72</label>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${formatNumber(gb200PricePerUnit)}/rack</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={2340000}
+                        max={2860000}
+                        step={10000}
+                        value={gb200PricePerUnit}
+                        onChange={(e) => setGb200PricePerUnit(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                        <span>$2.34M (low)</span>
+                        <span>$2.86M (high)</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600">🔴</span>
+                          <label className="text-sm font-medium text-gray-700">CM384</label>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${formatNumber(cm384PricePerUnit)}/rack</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={7200000}
+                        max={8800000}
+                        step={100000}
+                        value={cm384PricePerUnit}
+                        onChange={(e) => setCm384PricePerUnit(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                        <span>$7.2M (low)</span>
+                        <span>$8.8M (high)</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600">🟢</span>
+                          <label className="text-sm font-medium text-gray-700">H200 DGX</label>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${formatNumber(h200PricePerUnit)}/unit</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={322500}
+                        max={500000}
+                        step={5000}
+                        value={h200PricePerUnit}
+                        onChange={(e) => setH200PricePerUnit(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                        <span>$322,500 (low)</span>
+                        <span>$500,000 (high)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-orange-200">
+                    <h4 className="text-xs font-semibold text-gray-600 mb-2">Electricity Rate ($/kWh)</h4>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600">🔵</span>
+                          <label className="text-sm font-medium text-gray-700">U.S. Rate</label>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${electricityRateUS.toFixed(4)}/kWh</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.0588}
+                        max={0.1903}
+                        step={0.001}
+                        value={electricityRateUS}
+                        onChange={(e) => setElectricityRateUS(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                        <span>$0.059 (Louisiana)</span>
+                        <span>$0.190 (Massachusetts)</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-600">🔴</span>
+                          <label className="text-sm font-medium text-gray-700">China Rate</label>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${electricityRateChina.toFixed(4)}/kWh</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.045}
+                        max={0.11}
+                        step={0.001}
+                        value={electricityRateChina}
+                        onChange={(e) => setElectricityRateChina(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                        <span>$0.045 (low)</span>
+                        <span>$0.110 (high)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Results */}
@@ -470,12 +690,17 @@
                     construction={constructionTotalUS}
                     hardware={hardwareCostUS}
                     electricity={electricityCostUS}
+                    personnel={personnelCostUS}
                     total={totalCostUS}
+                    errorLower={totalErrorUSLower}
+                    errorUpper={totalErrorUSUpper}
                     units={racksUS}
                     unitLabel="GB200 NVL72 racks"
                     spflops={spflopsUS}
                     spflopsPerUnit={calcSPFLOPS(hardware.gb200)}
                     sgflopsPerDollar={sgflopsPerDollarUS}
+                    sgflopsLow={sgflopsPerDollarUSLow}
+                    sgflopsHigh={sgflopsPerDollarUSHigh}
                     crossoverAI={calcCrossoverAI(hardware.gb200)}
                     computeBound={isComputeBound(hardware.gb200)}
                     quantization={quantizationGB200}
@@ -489,12 +714,17 @@
                     construction={constructionTotalChina}
                     hardware={hardwareCostChina}
                     electricity={electricityCostChina}
+                    personnel={personnelCostChina}
                     total={totalCostChina}
+                    errorLower={totalErrorChinaLower}
+                    errorUpper={totalErrorChinaUpper}
                     units={racksChina}
                     unitLabel="CloudMatrix 384 racks"
                     spflops={spflopsChina}
                     spflopsPerUnit={calcSPFLOPS(hardware.cm384)}
                     sgflopsPerDollar={sgflopsPerDollarChina}
+                    sgflopsLow={sgflopsPerDollarChinaLow}
+                    sgflopsHigh={sgflopsPerDollarChinaHigh}
                     crossoverAI={calcCrossoverAI(hardware.cm384)}
                     computeBound={isComputeBound(hardware.cm384)}
                     quantization={quantizationCM384}
@@ -508,12 +738,17 @@
                     construction={constructionTotalChina}
                     hardware={hardwareCostH200}
                     electricity={electricityCostChina}
+                    personnel={personnelCostChina}
                     total={totalCostH200}
+                    errorLower={totalErrorH200Lower}
+                    errorUpper={totalErrorH200Upper}
                     units={podsH200}
                     unitLabel="DGX H200 pods"
                     spflops={spflopsH200}
                     spflopsPerUnit={calcSPFLOPS(hardware.h200pod)}
                     sgflopsPerDollar={sgflopsPerDollarH200}
+                    sgflopsLow={sgflopsPerDollarH200Low}
+                    sgflopsHigh={sgflopsPerDollarH200High}
                     crossoverAI={calcCrossoverAI(hardware.h200pod)}
                     computeBound={isComputeBound(hardware.h200pod)}
                     quantization={quantizationH200}
