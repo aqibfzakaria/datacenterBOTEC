@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Center Cost Comparison (with Quantization)</title>
+  <title>Data Center Cost Comparison (with Precision)</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -32,7 +32,7 @@
       // Arithmetic Intensity for SPFLOPS calculation (adjustable)
       const [arithmeticIntensity, setArithmeticIntensity] = useState(200);
 
-      // Quantization levels for each hardware
+      // Precision levels for each hardware
       const [quantizationGB200, setQuantizationGB200] = useState('FP16');
       const [quantizationCM384, setQuantizationCM384] = useState('FP16');
       const [quantizationH200, setQuantizationH200] = useState('FP16');
@@ -64,7 +64,7 @@
       const electricityRateChinaLow = 0.045;
       const electricityRateChinaHigh = 0.11;
 
-      // Quantization multipliers for PFLOPS and effective bandwidth
+      // Precision multipliers for PFLOPS and effective bandwidth
       // Lower precision = more ops and more values per byte transferred
       const quantizationSpecs = {
         'FP16': { pflopsMultiplier: 1, bandwidthMultiplier: 1, bytesPerValue: 2 },
@@ -280,7 +280,7 @@
         </div>
       );
 
-      const QuantizationSelector = ({ label, value, onChange, options, color }) => (
+      const PrecisionSelector = ({ label, value, onChange, options, color }) => (
         <div className="mb-4">
           <label className="text-xs font-medium text-gray-600 block mb-2">{label}</label>
           <div className="flex gap-1">
@@ -304,7 +304,7 @@
       const ResultCard = ({ title, construction, hardware, electricity, personnel, total, errorLower, errorUpper, units, unitLabel, spflops, sgflopsPerDollar, sgflopsLow, sgflopsHigh, color, flag, spflopsPerUnit, crossoverAI, computeBound, quantization, peakPFLOPS }) => (
         <div className={`p-6 rounded-lg ${color}`}>
           <h3 className="text-2xl font-bold mb-2">{flag} {title}</h3>
-          <div className="text-sm font-semibold text-gray-600 mb-4">Quantization: {quantization}</div>
+          <div className="text-sm font-semibold text-gray-600 mb-4">Precision: {quantization}</div>
 
           <div className="mb-4">
             <h4 className="text-sm font-semibold text-gray-600 mb-2">COST BREAKDOWN (3 Years)</h4>
@@ -388,7 +388,7 @@
             <div className="text-center mb-8">
               <h1 className="text-5xl font-bold text-white mb-3">Data Center Performance & Cost Analysis</h1>
               <p className="text-gray-300 text-lg">3-Year Total Cost of Ownership: U.S. vs China (CM384) vs China (H200)</p>
-              <p className="text-gray-400 text-sm mt-2">Using Sustainable PFLOPS (at AI={arithmeticIntensity}) with Quantization Options</p>
+              <p className="text-gray-400 text-sm mt-2">Using Sustainable PFLOPS (at AI={arithmeticIntensity}) with Precision Options</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -494,22 +494,22 @@
                 </div>
 
                 <div className="mb-6 bg-yellow-50 p-4 rounded-lg border-2 border-yellow-300">
-                  <h3 className="text-lg font-semibold mb-4 text-yellow-900">Quantization</h3>
-                  <QuantizationSelector
+                  <h3 className="text-lg font-semibold mb-4 text-yellow-900">Precision</h3>
+                  <PrecisionSelector
                     label="GB200 NVL72 (U.S.)"
                     value={quantizationGB200}
                     onChange={setQuantizationGB200}
                     options={baseHardware.gb200.supportedQuant}
                     color="bg-blue-600"
                   />
-                  <QuantizationSelector
+                  <PrecisionSelector
                     label="CloudMatrix 384 (China)"
                     value={quantizationCM384}
                     onChange={setQuantizationCM384}
                     options={baseHardware.cm384.supportedQuant}
                     color="bg-red-600"
                   />
-                  <QuantizationSelector
+                  <PrecisionSelector
                     label="H200 Pod (China)"
                     value={quantizationH200}
                     onChange={setQuantizationH200}
@@ -804,7 +804,7 @@
                   </div>
 
                   <div className="mt-4 bg-white bg-opacity-50 p-4 rounded-lg">
-                    <h4 className="text-sm font-semibold text-gray-600 mb-2 text-center">Quantization Settings</h4>
+                    <h4 className="text-sm font-semibold text-gray-600 mb-2 text-center">Precision Settings</h4>
                     <div className="grid grid-cols-3 gap-4 text-center text-sm">
                       <div>
                         <span className="text-blue-700 font-semibold">U.S.: {quantizationGB200}</span>
